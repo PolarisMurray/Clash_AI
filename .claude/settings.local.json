@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat)",
+      "Bash(bash /tmp/scan_dirs.sh)",
+      "Bash(awk -F: '{print $1}')",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(.venv/bin/python -c \"import torch; print\\('torch', torch.__version__\\); import einops\")",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(python3 -V)",
+      "Bash(python3 -c \"import torch; print\\('torch:', torch.__version__\\)\")",
+      "Bash(python3 -c \"import einops; print\\('einops:', einops.__version__\\)\")",
+      "Bash(python3 -m pip install einops)",
+      "Bash(python3 -m training.train_policy --smoke --out outputs/policy_runs/smoke)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -m pip install --quiet cairosvg tensorboard ultralytics)",
+      "Bash(python3 -m pip install --quiet svglib reportlab)",
+      "Bash(brew list *)",
+      "Bash(brew install *)",
+      "Bash(rsvg-convert --version)",
+      "Bash(rsvg-convert -w 2400 docs/figures/architecture.svg -o outputs/visualizations/01_architecture.png)",
+      "Bash(python3 -m scripts.visualize_yolo --frames 8 --device mps)",
+      "Bash(python3 -m scripts.visualize_yolo --frames 12 --device mps --conf 0.15)",
+      "Bash(python3 -m scripts.visualize_training)",
+      "Bash(python3 -m scripts.visualize_pipeline)",
+      "Bash(python3 -m scripts.visualize_dataset)",
+      "Bash(python3 -m scripts.visualize_yolo --frames 12 --device mps --conf 0.15 --out outputs/visualizations)"
+    ]
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "screenshots_dir": "/Users/chenzishu/Documents/Project/Clash/tests/sample_screenshots/1",
+  "n_frames_used": 12,
+  "n_classes_seen": 4,
+  "n_detections_total": 36,
+  "mean_detections_per_frame": 3.0,
+  "per_frame": [
+    {
+      "frame": "00000",
+      "n_det": 1,
+      "top_classes": [
+        [
+          "guard",
+          1
+        ]
+      ]
+    },
+    {
+      "frame": "00465",
+      "n_det": 2,
+      "top_classes": [
+        [
+          "guard",
+          1
+        ],
+        [
+          "clone",
+          1
+        ]
+      ]
+    },
+    {
+      "frame": "00930",
+      "n_det": 4,
+      "top_classes": [
+        [
+          "guard",
+          2
+        ],
+        [
+          "clone",
+          1
+        ],
+        [
+          "princess",
+          1
+        ]
+      ]
+    },
+    {
+      "frame": "01395",
+      "n_det": 4,
+      "top_classes": [
+        [
+          "guard",
+          3
+        ],
+        [
+          "princess",
+          1
+        ]
+      ]
+    },
+    {
+      "frame": "01860",
+      "n_det": 3,
+      "top_classes": [
+        [
+          "guard",
+          2
+        ],
+        [
+          "princess",
+          1
+        ]
+      ]
+    },
+    {
+      "frame": "02325",
+      "n_det": 6,
+      "top_classes": [
+        [
+          "princess",
+          3
+        ],
+        [
+          "guard",
+          1
+        ],
+        [
+          "clone",
+          1
+        ],
+        [
+          "ice-golem",
+          1
+        ]
+      ]
+    },
+    {
+      "frame": "02805",
+      "n_det": 2,
+      "top_classes": [
+        [
+          "guard",
+          2
+        ]
+      ]
+    },
+    {
+      "frame": "03270",
+      "n_det": 3,
+      "top_classes": [
+        [
+          "guard",
+          2
+        ],
+        [
+          "clone",
+          1
+        ]
+      ]
+    },
+    {
+      "frame": "03735",
+      "n_det": 2,
+      "top_classes": [
+        [
+          "guard",
+          1
+        ],
+        [
+          "princess",
+          1
+        ]
+      ]
+    },
+    {
+      "frame": "04200",
+      "n_det": 6,
+      "top_classes": [
+        [
+          "clone",
+          3
+        ],
+        [
+          "princess",
+          2
+        ],
+        [
+          "guard",
+          1
+        ]
+      ]
+    },
+    {
+      "frame": "04665",
+      "n_det": 1,
+      "top_classes": [
+        [
+          "guard",
+          1
+        ]
+      ]
+    },
+    {
+      "frame": "05145",
+      "n_det": 2,
+      "top_classes": [
+        [
+          "guard",
+          2
+        ]
+      ]
+    }
+  ]
+}

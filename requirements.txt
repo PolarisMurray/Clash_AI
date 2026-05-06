@@ -1,0 +1,24 @@
+# Core deep learning
+torch>=2.2
+torchvision>=0.17
+einops>=0.8
+
+# Detection
+ultralytics>=8.1
+
+# Image / IO
+opencv-python>=4.9
+Pillow>=10
+numpy>=1.26
+PyYAML>=6.0
+
+# Training utilities
+tqdm>=4.66
+tensorboard>=2.16
+
+# Visualization scripts
+matplotlib>=3.8
+
+# Optional — uncomment if you use these
+# wandb>=0.16             # for cloud experiment tracking
+# scipy>=1.13             # only if you add custom utilities that need it
