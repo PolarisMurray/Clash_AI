@@ -7,7 +7,8 @@ timestep.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from pathlib import Path
+from typing import Dict, Union
 
 import torch
 import torch.nn as nn
@@ -90,6 +91,14 @@ class ClashRoyaleAgent(nn.Module):
             pos_mode=m.heads.pos_mode,
             enable_delay=m.heads.enable_delay,
         )
+
+    @classmethod
+    def from_checkpoint(cls, path: Union[str, Path], map_location: Union[str, torch.device] = "cpu") -> "ClashRoyaleAgent":
+        """Rebuild an agent from a checkpoint written by ``training.train_policy``."""
+        ckpt = torch.load(str(path), map_location=map_location, weights_only=False)
+        agent = cls(FullConfig.from_dict(ckpt["config"]))
+        agent.load_state_dict(ckpt["state_dict"])
+        return agent.eval()
 
     def encode_frames(self, batch: TrajectoryBatch) -> torch.Tensor:
         """Per-timestep encode → (B, T, n_latents, D)."""

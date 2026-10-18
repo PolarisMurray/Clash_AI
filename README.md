@@ -1,15 +1,13 @@
-# Clash Royale AI — Perceiver-DT (refactored)
+# Clash Royale AI — Perceiver-DT
 
-A **screen-only** Clash Royale agent. Observes raw gameplay frames, detects
-units with YOLO, fuses everything into multimodal tokens, compresses with a
-Perceiver IO encoder, and predicts the next action with a Decision Transformer.
-
-This is the simplified pipeline that replaces the OCR-coupled, episode-cutting,
-ResNet-classifier-driven legacy stack.
+A **screen-only** Clash Royale agent. It observes raw gameplay frames, detects
+units with a fine-tuned YOLO26 detector, fuses everything into multimodal
+tokens, compresses each frame with a Perceiver IO encoder, and predicts the
+next action with a Decision Transformer trained offline from replays.
 
 ```
                     ┌─────────────────────────────────────────────────────┐
-   raw frame ──►    │  1. YOLOv8                                          │
+   raw frame ──►    │  1. YOLO26 (fine-tuned, 155 Clash Royale classes)   │
                     │     bbox / class / conf / side / track              │
                     │                                                     │
                     │  2. FrameTokenizer                                  │
@@ -29,36 +27,28 @@ ResNet-classifier-driven legacy stack.
                     └─────────────────────────────────────────────────────┘
 ```
 
-No spatial-then-temporal hard-coding. The Perceiver compresses each frame's
-multimodal cloud; the Decision Transformer attends across time. Spatial,
-temporal, object, and card relationships are all learned jointly.
-
 ---
 
-## Layout (new files only)
+## Layout
 
 ```
-configs/
-  policy_config.py           # one config tree shared by all stages
-data/
-  replay_dataset.py          # offline-RL .npz trajectory loader + sampler
-perception/
-  yolo_detector.py           # thin YOLOv8 wrapper (no OCR / no episode cut)
-  tokenizer.py               # multimodal frame tokenizer (PyTorch)
+configs/policy_config.py         one config tree shared by all stages
+data/replay_dataset.py           .npz trajectory loader, sampler, frames→trajectory builder
+perception/yolo_detector.py      YOLO wrapper (frame → structured detections)
+perception/tokenizer.py          multimodal frame tokenizer
+models/detection/
+  yolo26s.pt                     COCO-pretrained YOLO26s — base for fine-tuning only
+  clash_royale_yolo26s.pt        fine-tuned on the 155 Clash Royale classes (used by default)
 models/policy/
-  perceiver_encoder.py       # Perceiver IO latent bottleneck
-  decision_transformer.py    # causal Transformer over latents + action slot
-  policy_heads.py            # select / pos / delay heads + policy_loss()
-  agent.py                   # ClashRoyaleAgent (tokenizer→encoder→DT→heads)
-training/
-  train_policy.py            # training loop with cosine warmup + tb/wandb
-README_NEW.md                # this file
+  perceiver_encoder.py           Perceiver IO latent bottleneck
+  decision_transformer.py        causal Transformer over latents + action slot
+  policy_heads.py                select / pos / delay heads + policy_loss()
+  agent.py                       ClashRoyaleAgent (tokenizer→encoder→DT→heads)
+training/train_policy.py         policy training loop (cosine warmup, TensorBoard / wandb)
+training/detection/train.py      YOLO fine-tuning on training/detection/prepared_dataset
+scripts/visualize_*.py           one script per figure in outputs/visualizations
+tests/test_pipeline.py           regression tests
 ```
-
-The legacy code (`training/policy/dt.py`, `training/policy/starformer*.py`,
-`perception/sar/*`, `perception/ocr/*`, `data_pipeline/detection_dataset/cut_episodes.py`,
-`training/classification/*`) is left untouched on disk and can be removed once
-the new path is validated. None of the new modules import from them.
 
 ---
 
@@ -66,41 +56,58 @@ the new path is validated. None of the new modules import from them.
 
 ### 1. Install
 
-The new code only needs PyTorch + Ultralytics + einops. JAX / PaddleOCR are
-not required.
-
 ```bash
-python3 -m pip install torch torchvision ultralytics einops opencv-python pyyaml numpy
-# optional:
-python3 -m pip install tensorboard wandb
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### 2. Smoke test (no data needed)
+### 2. Tests and smoke run (no data needed)
 
 ```bash
-python3 -m training.train_policy --smoke --out outputs/policy_runs/smoke
+python -m pytest -q tests
+python -m training.train_policy --smoke --out outputs/policy_runs/smoke
 ```
 
-This runs the full pipeline (Perceiver + DT + heads) with synthetic random
-trajectories and a tiny model. Should finish in under a minute on CPU and
-produce a checkpoint at `outputs/policy_runs/smoke/ckpt/epoch_000.pt`.
+The smoke run trains a scaled-down model (5.4M params) on synthetic
+trajectories for one epoch in about 10 seconds and writes
+`outputs/policy_runs/smoke/ckpt/epoch_000.pt`.
 
-### 3. Real training run
-
-Build trajectories using `perception/yolo_detector.py` to convert raw
-gameplay videos into the .npz schema described below, drop them under
-`outputs/replay_dataset/`, then:
+### 3. Detect units on a screenshot
 
 ```bash
-python3 -m training.train_policy \
-    --data outputs/replay_dataset \
-    --epochs 10 \
-    --batch-size 16 \
-    --seq-len 30 \
-    --device auto
+python -m perception.yolo_detector \
+    --image training/detection/prepared_dataset/yolo_detection/images/val/OYASSU_20230212_episodes/4/02385.jpg
+```
+
+### 4. Fine-tune the detector (optional)
+
+```bash
+python training/detection/train.py --skip-prepare --epochs 30 --batch 16 --device mps
+cp training/detection/runs/cr_yolo26s/weights/best.pt models/detection/clash_royale_yolo26s.pt
+```
+
+`--time 1.0` limits training to one hour instead of a fixed epoch count.
+The prepared dataset (5,551 train / 1,388 val frames, 155 classes) is in the
+repo; `source_dataset/` is only needed to rebuild it.
+
+### 5. Train the policy on real trajectories
+
+Put `.npz` trajectories (schema below) under a folder, then:
+
+```bash
+python -m training.train_policy --data outputs/replay_dataset --epochs 10 --batch-size 16 --seq-len 30
 ```
 
 TensorBoard logs land in `outputs/policy_runs/perceiver_dt/tb`.
+
+### 6. Figures
+
+```bash
+python -m scripts.visualize_yolo          # 02_yolo_grid.png, 03_yolo_stats.png, yolo_overlays/
+python -m scripts.visualize_training      # 04_training_curves.png from outputs/policy_runs/demo/tb
+python -m scripts.visualize_pipeline      # 05_pipeline_shapes.png (real frames → action)
+python -m scripts.visualize_dataset       # 06_replay_dataset.png
+```
 
 ---
 
@@ -117,7 +124,7 @@ TensorBoard logs land in `outputs/policy_runs/perceiver_dt/tb`.
 | `det_side`     | (N, M)          | int64   | 0=unknown, 1=ally, 2=enemy                   |
 | `det_track`    | (N, M)          | int64   | tracker id, 0 if no tracker                  |
 | `det_mask`     | (N, M)          | bool    | True = real detection (not padding)          |
-| `cards`        | (N, n_hand)     | int64   | card-name ids per slot, -1 = unknown         |
+| `cards`        | (N, n_hand)     | int64   | card-name ids per slot, -1 = unknown; last slot = next card |
 | `elixir`       | (N,)            | int64   | 0..10, -1 unknown                            |
 | `action_card`  | (N,)            | int64   | slot in [0, n_hand); n_hand = no-op          |
 | `action_pos`   | (N, 2)          | float32 | (row_norm, col_norm) in [0, 1]               |
@@ -125,11 +132,13 @@ TensorBoard logs land in `outputs/policy_runs/perceiver_dt/tb`.
 | `timestep`     | (N,)            | int64   | absolute frame index in the episode          |
 
 Return-to-go is computed at load time (`np.flip(np.cumsum(np.flip(reward)))`).
-Trajectories shorter than `seq_len` are left-padded by repeating the first
-frame at sample time, so you don't need to drop short games.
+Windows that start before frame 0 are left-padded by repeating the first
+frame; padded steps are excluded from the loss.
 
-`build_random_trajectory(cfg, n_frames)` generates a synthetic sample with
-the correct schema — useful for unit tests.
+`trajectory_from_frames(frames, detections, cfg)` turns consecutive frames
+plus their YOLO output into a `Trajectory` (cards / elixir / actions left as
+unknown / no-op for you to fill in), and `Trajectory.to_npz(path)` saves it.
+`build_random_trajectory(cfg, n_frames)` generates a synthetic sample.
 
 ---
 
@@ -150,31 +159,17 @@ overrides and routes them by attribute name. Same key on multiple subs
 
 ---
 
-## What was removed (and why)
+## Inference
 
-| removed                                              | replacement                              |
-| ---------------------------------------------------- | ----------------------------------------- |
-| PaddleOCR timer / center-text                        | none — trajectories are pre-segmented     |
-| `data_pipeline/detection_dataset/cut_episodes.py`   | upstream collector responsibility         |
-| ResNet card classifier                               | card embedded directly from name id       |
-| ResNet elixir classifier                             | elixir embedded as int (0..10)            |
-| `perception/sar/*` (SARBuilder, OCR-coupled)        | `data/replay_dataset.py` reads .npz       |
-| Spatial-attention-then-temporal-attention StARformer | unified Perceiver + Decision Transformer  |
-| Multiple parallel YOLO detectors                     | single `YOLODetector` wrapper             |
-| Hard-coded 32×18 deployment grid                     | configurable (default 36×64 per spec)     |
+```python
+from models.policy.agent import ClashRoyaleAgent
+agent = ClashRoyaleAgent.from_checkpoint("outputs/policy_runs/demo/ckpt.pt")
+action = agent.predict_last(batch)   # {"select", "pos" (row, col), "delay"}
+```
 
----
-
-## Inference (sketch)
-
-The `ClashRoyaleAgent` is checkpoint-only-portable. To plug it into the
-existing local-inference entry point (`inference/run.py`), build a sliding
-window of the last `seq_len` frames + their YOLO detections, push them
-through `agent.predict_last(batch)`, then map `select` / `pos` to a card
-name and pixel coordinate. (Helper code lives in `models/policy/agent.py`.)
-
-The legacy YOLO + hardcoded-strategy advisor still works as before; the new
-model is opt-in.
+Build `batch` from the last `seq_len` frames with `YOLODetector`,
+`trajectory_from_frames`, `ReplayDataset` and `collate`;
+`scripts/visualize_pipeline.py` does exactly this on real frames.
 
 ---
 

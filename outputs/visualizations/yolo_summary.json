@@ -1,175 +1,303 @@
 {
-  "screenshots_dir": "/Users/chenzishu/Documents/Project/Clash/tests/sample_screenshots/1",
+  "screenshots_dir": "training/detection/prepared_dataset/yolo_detection/images/val/OYASSU_20230212_episodes/4",
   "n_frames_used": 12,
-  "n_classes_seen": 4,
-  "n_detections_total": 36,
-  "mean_detections_per_frame": 3.0,
+  "n_classes_seen": 16,
+  "n_detections_total": 226,
+  "mean_detections_per_frame": 18.833333333333332,
   "per_frame": [
     {
-      "frame": "00000",
-      "n_det": 1,
+      "frame": "00045",
+      "n_det": 8,
       "top_classes": [
         [
-          "guard",
-          1
-        ]
-      ]
-    },
-    {
-      "frame": "00465",
-      "n_det": 2,
-      "top_classes": [
-        [
-          "guard",
-          1
+          "queen-tower",
+          4
         ],
         [
-          "clone",
-          1
-        ]
-      ]
-    },
-    {
-      "frame": "00930",
-      "n_det": 4,
-      "top_classes": [
-        [
-          "guard",
+          "king-tower",
           2
         ],
         [
-          "clone",
+          "tower-bar",
+          2
+        ]
+      ]
+    },
+    {
+      "frame": "00690",
+      "n_det": 11,
+      "top_classes": [
+        [
+          "queen-tower",
+          4
+        ],
+        [
+          "king-tower",
+          2
+        ],
+        [
+          "tower-bar",
+          2
+        ],
+        [
+          "zappy",
           1
         ],
         [
-          "princess",
+          "text",
           1
         ]
       ]
     },
     {
-      "frame": "01395",
-      "n_det": 4,
+      "frame": "01590",
+      "n_det": 16,
       "top_classes": [
         [
-          "guard",
+          "bar",
+          6
+        ],
+        [
+          "queen-tower",
+          4
+        ],
+        [
+          "king-tower",
+          2
+        ],
+        [
+          "tower-bar",
+          2
+        ],
+        [
+          "clock",
+          1
+        ]
+      ]
+    },
+    {
+      "frame": "02265",
+      "n_det": 15,
+      "top_classes": [
+        [
+          "queen-tower",
+          4
+        ],
+        [
+          "bar",
+          4
+        ],
+        [
+          "tower-bar",
           3
         ],
         [
-          "princess",
-          1
-        ]
-      ]
-    },
-    {
-      "frame": "01860",
-      "n_det": 3,
-      "top_classes": [
-        [
-          "guard",
+          "king-tower",
           2
         ],
         [
-          "princess",
+          "barbarian",
           1
         ]
       ]
     },
     {
-      "frame": "02325",
-      "n_det": 6,
+      "frame": "02865",
+      "n_det": 16,
       "top_classes": [
         [
-          "princess",
+          "royal-recruit",
+          7
+        ],
+        [
+          "queen-tower",
+          4
+        ],
+        [
+          "tower-bar",
           3
         ],
         [
-          "guard",
-          1
-        ],
-        [
-          "clone",
-          1
-        ],
-        [
-          "ice-golem",
-          1
-        ]
-      ]
-    },
-    {
-      "frame": "02805",
-      "n_det": 2,
-      "top_classes": [
-        [
-          "guard",
+          "king-tower",
           2
         ]
       ]
     },
     {
-      "frame": "03270",
-      "n_det": 3,
+      "frame": "03585",
+      "n_det": 11,
       "top_classes": [
         [
-          "guard",
-          2
+          "queen-tower",
+          4
         ],
         [
-          "clone",
-          1
-        ]
-      ]
-    },
-    {
-      "frame": "03735",
-      "n_det": 2,
-      "top_classes": [
-        [
-          "guard",
-          1
-        ],
-        [
-          "princess",
-          1
-        ]
-      ]
-    },
-    {
-      "frame": "04200",
-      "n_det": 6,
-      "top_classes": [
-        [
-          "clone",
+          "tower-bar",
           3
         ],
         [
-          "princess",
+          "king-tower",
           2
         ],
         [
-          "guard",
+          "musketeer",
+          1
+        ],
+        [
+          "bar",
           1
         ]
       ]
     },
     {
-      "frame": "04665",
-      "n_det": 1,
+      "frame": "04290",
+      "n_det": 27,
       "top_classes": [
         [
-          "guard",
-          1
-        ]
-      ]
-    },
-    {
-      "frame": "05145",
-      "n_det": 2,
-      "top_classes": [
+          "royal-recruit",
+          6
+        ],
         [
-          "guard",
+          "bar",
+          5
+        ],
+        [
+          "queen-tower",
+          4
+        ],
+        [
+          "tower-bar",
+          4
+        ],
+        [
+          "king-tower",
           2
+        ]
+      ]
+    },
+    {
+      "frame": "05190",
+      "n_det": 29,
+      "top_classes": [
+        [
+          "royal-recruit",
+          13
+        ],
+        [
+          "queen-tower",
+          4
+        ],
+        [
+          "tower-bar",
+          4
+        ],
+        [
+          "king-tower",
+          2
+        ],
+        [
+          "king-tower-bar",
+          1
+        ]
+      ]
+    },
+    {
+      "frame": "06150",
+      "n_det": 24,
+      "top_classes": [
+        [
+          "royal-recruit",
+          8
+        ],
+        [
+          "queen-tower",
+          4
+        ],
+        [
+          "tower-bar",
+          4
+        ],
+        [
+          "bar",
+          3
+        ],
+        [
+          "king-tower",
+          2
+        ]
+      ]
+    },
+    {
+      "frame": "07365",
+      "n_det": 34,
+      "top_classes": [
+        [
+          "royal-recruit",
+          12
+        ],
+        [
+          "queen-tower",
+          4
+        ],
+        [
+          "tower-bar",
+          4
+        ],
+        [
+          "bar",
+          3
+        ],
+        [
+          "zappy",
+          3
+        ]
+      ]
+    },
+    {
+      "frame": "08400",
+      "n_det": 24,
+      "top_classes": [
+        [
+          "queen-tower",
+          4
+        ],
+        [
+          "tower-bar",
+          4
+        ],
+        [
+          "skeleton",
+          3
+        ],
+        [
+          "bar",
+          3
+        ],
+        [
+          "clock",
+          2
+        ]
+      ]
+    },
+    {
+      "frame": "08940",
+      "n_det": 11,
+      "top_classes": [
+        [
+          "queen-tower",
+          4
+        ],
+        [
+          "tower-bar",
+          4
+        ],
+        [
+          "king-tower",
+          2
+        ],
+        [
+          "king-tower-bar",
+          1
         ]
       ]
     }

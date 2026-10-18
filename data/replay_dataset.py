@@ -10,7 +10,7 @@ arrays corresponds to one frame in chronological order:
     det_side     (N, M)        int64    0=unknown, 1=ally, 2=enemy
     det_track    (N, M)        int64    optional, 0 if no tracker
     det_mask     (N, M)        bool     True for real detections
-    cards        (N, n_hand)   int64    card-name ids; -1 = unknown
+    cards        (N, n_hand)   int64    card-name ids; -1 = unknown; last slot = next card
     elixir       (N,)          int64    0..n_elixir; -1 unknown clamped to 0
     action_card  (N,)          int64    n_hand = no-op, else slot in [0, n_hand)
     action_pos   (N, 2)        float32  (row_norm, col_norm) in [0, 1]
@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -70,6 +70,10 @@ class Trajectory:
         rtg = np.flip(np.cumsum(np.flip(data["reward"].astype(np.float32)))).copy()
         return cls(rtg=rtg, **data)
 
+    def to_npz(self, path: Path) -> None:
+        """Write the on-disk schema read back by ``from_npz`` (rtg is recomputed on load)."""
+        np.savez_compressed(str(path), **{k: getattr(self, k) for k in REQUIRED_KEYS})
+
     def __len__(self) -> int:
         return self.images.shape[0]
 
@@ -107,16 +111,9 @@ class ReplayDataset(Dataset):
     left-padded with a repeat of the first frame (a common DT trick).
     """
 
-    def __init__(
-        self,
-        trajectories: Sequence[Trajectory],
-        cfg: FullConfig,
-        split: str = "train",
-    ):
-        self.cfg = cfg
+    def __init__(self, trajectories: Sequence[Trajectory], cfg: FullConfig):
         self.tcfg: TokenizerConfig = cfg.tokenizer
         self.dcfg: DataConfig = cfg.data
-        self.split = split
         if not trajectories:
             raise ValueError("ReplayDataset received no trajectories")
         self.trajectories = list(trajectories)
@@ -143,10 +140,12 @@ class ReplayDataset(Dataset):
         action_ratio = max(n_action / len(is_action), 1e-3)
         weights = is_action / action_ratio + (1.0 - is_action) / max(1.0 - action_ratio, 1e-3)
         # Spread weight to frames just before each action so the model gets buildup context.
+        # The window never crosses into the previous trajectory.
         if self.dcfg.action_focus_window > 0:
             base = weights.copy()
             for idx in np.where(is_action > 0)[0]:
-                lo = max(0, idx - self.dcfg.action_focus_window)
+                traj_start = idx - self._index[idx][1]
+                lo = max(traj_start, idx - self.dcfg.action_focus_window)
                 for j in range(lo, idx):
                     alpha = 1.0 / (idx - j + 1)
                     weights[j] = max(weights[j], alpha / action_ratio)
@@ -166,29 +165,34 @@ class ReplayDataset(Dataset):
         start = end - L + 1
         # Indices into the trajectory; repeat the first frame for left padding
         idxs = np.arange(start, end + 1)
+        is_pad = idxs < 0
         idxs = np.clip(idxs, 0, len(traj) - 1)
 
-        sample = self._gather(traj, idxs)
+        sample = self._gather(traj, idxs, is_pad)
         if self.dcfg.lr_flip and torch.rand(1).item() < 0.5:
             sample = self._flip(sample)
         if self.dcfg.card_shuffle and torch.rand(1).item() < 0.5:
             sample = self._shuffle_hand(sample)
         return sample
 
-    def _gather(self, traj: Trajectory, idxs: np.ndarray):
+    def _gather(self, traj: Trajectory, idxs: np.ndarray, is_pad: np.ndarray):
         H, W = self.tcfg.image_size
+        n_hand = self.tcfg.n_hand
         images = np.stack([_normalize_image(traj.images[i], (H, W)).numpy() for i in idxs], axis=0)
 
-        cards = traj.cards[idxs].copy()
-        cards[cards < 0] = 0  # 0 is the padding token in the embedding
+        cards = np.maximum(traj.cards[idxs], -1)          # -1 = unknown; the tokenizer shifts ids by +1
         elixir = traj.elixir[idxs].copy()
         elixir[elixir < 0] = 0
 
-        # Previous action / reward
+        # Previous action / reward. Encoding for the tokenizer: 0 = no-op / none, slot k -> k + 1.
+        # The first frame of an episode (and left padding) has no previous step.
+        has_prev = idxs > 0
         prev_idxs = np.maximum(idxs - 1, 0)
-        prev_a_card = traj.action_card[prev_idxs].copy()
-        prev_a_pos = traj.action_pos[prev_idxs].copy()
-        prev_r = traj.reward[prev_idxs].copy()
+        prev_raw = traj.action_card[prev_idxs]
+        played = has_prev & (prev_raw != n_hand)
+        prev_a_card = np.where(played, prev_raw + 1, 0)
+        prev_a_pos = np.where(played[:, None], traj.action_pos[prev_idxs], 0.0)
+        prev_r = np.where(has_prev, traj.reward[prev_idxs], 0.0)
 
         rtg = traj.rtg[idxs].astype(np.float32) / max(self.dcfg.rtg_scale, 1e-6)
 
@@ -201,7 +205,7 @@ class ReplayDataset(Dataset):
                 if traj.action_card[j] != self.tcfg.n_hand:
                     delay[k] = j - i
                     break
-        action_mask = (action_card != self.tcfg.n_hand) | (delay < self.tcfg.max_delay)
+        action_mask = ((action_card != n_hand) | (delay < self.tcfg.max_delay)) & ~is_pad
 
         # Convert continuous (row, col) targets into a flat grid index (used in grid mode)
         pos_idx = (np.clip(action_pos[:, 0], 0, 0.999) * self.tcfg.grid_rows).astype(np.int64) * self.tcfg.grid_cols
@@ -241,24 +245,25 @@ class ReplayDataset(Dataset):
         cols = self.tcfg.grid_cols
         pos_idx = (pos[..., 0].clamp(0, 0.999) * rows).long() * cols + (pos[..., 1].clamp(0, 0.999) * cols).long()
         sample["target_pos_idx"] = pos_idx
-        sample["prev_a_pos"][..., 1] = 1.0 - sample["prev_a_pos"][..., 1]
+        has_prev = sample["prev_a_card"] != 0
+        prev_col = sample["prev_a_pos"][..., 1]
+        sample["prev_a_pos"][..., 1] = torch.where(has_prev, 1.0 - prev_col, prev_col)
         return sample
 
     def _shuffle_hand(self, sample):
         n_hand = self.tcfg.n_hand
-        perm = torch.randperm(n_hand)
+        # Permute only the playable slots; the last slot (next card) keeps its position.
+        n_play = max(n_hand - 1, 1)
+        perm = torch.cat([torch.randperm(n_play), torch.arange(n_play, n_hand)])
         # cards: (T, n_hand)
         sample["cards"] = sample["cards"][:, perm]
         # remap target_select if not no-op
         inv = torch.argsort(perm)
         sel = sample["target_select"]
         no_op = sel == n_hand
-        new_sel = torch.where(no_op, sel, inv[sel.clamp_max(n_hand - 1)])
-        sample["target_select"] = new_sel
-        prev = sample["prev_a_card"]
-        prev_no_op = prev == 0                                    # 0 is padding/no-op for prev embedding
-        new_prev = torch.where(prev_no_op, prev, inv[(prev - 1).clamp_min(0)] + 1)
-        sample["prev_a_card"] = new_prev
+        sample["target_select"] = torch.where(no_op, sel, inv[sel.clamp_max(n_hand - 1)])
+        prev = sample["prev_a_card"]                              # 0 = none, slot k -> k + 1
+        sample["prev_a_card"] = torch.where(prev == 0, prev, inv[(prev - 1).clamp_min(0)] + 1)
         return sample
 
 
@@ -292,7 +297,7 @@ def collate(batch: List[dict]) -> Tuple[TrajectoryBatch, dict]:
 
 
 def build_dataloader(cfg: FullConfig, trajectories: Iterable[Trajectory], split: str = "train") -> DataLoader:
-    ds = ReplayDataset(list(trajectories), cfg=cfg, split=split)
+    ds = ReplayDataset(list(trajectories), cfg=cfg)
     sampler = ds.sampler() if (split == "train" and cfg.data.weighted_sampling) else None
     return DataLoader(
         ds,
@@ -303,6 +308,38 @@ def build_dataloader(cfg: FullConfig, trajectories: Iterable[Trajectory], split:
         collate_fn=collate,
         drop_last=(split == "train"),
         persistent_workers=(cfg.data.num_workers > 0),
+    )
+
+
+def trajectory_from_frames(frames_rgb: Sequence[np.ndarray], detections: Sequence, cfg: FullConfig) -> Trajectory:
+    """Build a trajectory from consecutive RGB frames (H, W, 3) and their YOLO ``FrameDetections``.
+
+    Images are resized to ``cfg.tokenizer.image_size``. Labels the screen alone does not give
+    are left as "unknown": cards = -1, elixir = -1, every action = no-op, reward = 0.
+    Overwrite those arrays with real labels before using the trajectory for training.
+    """
+    tk = cfg.tokenizer
+    n = len(frames_rgb)
+    assert n == len(detections) and n > 0, "need one FrameDetections per frame"
+    imgs = torch.from_numpy(np.stack(frames_rgb)).permute(0, 3, 1, 2).float()
+    imgs = torch.nn.functional.interpolate(imgs, size=tuple(tk.image_size), mode="bilinear", align_corners=False)
+    det = [d.to_array(tk.max_objects) for d in detections]
+    reward = np.zeros(n, dtype=np.float32)
+    return Trajectory(
+        images=imgs.round().clamp(0, 255).to(torch.uint8).numpy(),
+        det_cls=np.stack([d["cls_ids"] for d in det]),
+        det_bbox=np.stack([d["bbox_norm"] for d in det]),
+        det_conf=np.stack([d["conf"] for d in det]),
+        det_side=np.stack([d["side"] for d in det]),
+        det_track=np.stack([d["track"] for d in det]),
+        det_mask=np.stack([d["mask"] for d in det]),
+        cards=np.full((n, tk.n_hand), -1, dtype=np.int64),
+        elixir=np.full(n, -1, dtype=np.int64),
+        action_card=np.full(n, tk.n_hand, dtype=np.int64),
+        action_pos=np.zeros((n, 2), dtype=np.float32),
+        reward=reward,
+        timestep=np.arange(n, dtype=np.int64),
+        rtg=reward.copy(),
     )
 
 

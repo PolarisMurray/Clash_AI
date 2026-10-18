@@ -20,7 +20,7 @@ this variable-length sequence, so we don't need to pad to a global maximum.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Tuple
 
 import torch
 import torch.nn as nn
@@ -135,6 +135,7 @@ class FrameTokenizer(nn.Module):
         self.d_model = d_model
         self.max_objects = max_objects
         self.n_hand = n_hand
+        self.max_track_ids = max_track_ids
 
         self.patch = PatchEmbed(image_size=image_size, patch_size=patch_size, d_model=d_model)
 
@@ -144,7 +145,7 @@ class FrameTokenizer(nn.Module):
         self.side_emb = nn.Embedding(3, d_model)            # 0 unknown, 1 ally, 2 enemy
         self.track_emb = nn.Embedding(max_track_ids + 1, d_model, padding_idx=0)
 
-        # Card / elixir tokens
+        # Card / elixir tokens (card id k -> row k + 1; row 0 = unknown card)
         self.card_emb = nn.Embedding(n_cards + 1, d_model, padding_idx=0)
         self.card_slot_emb = nn.Embedding(n_hand, d_model)
         self.elixir_emb = nn.Embedding(n_elixir + 1, d_model)
@@ -169,7 +170,7 @@ class FrameTokenizer(nn.Module):
         det_side: torch.Tensor,                         # (B, M) long
         det_track: torch.Tensor,                        # (B, M) long
         det_mask: torch.Tensor,                         # (B, M) bool
-        cards: torch.Tensor,                            # (B, n_hand) long
+        cards: torch.Tensor,                            # (B, n_hand) long, -1 = unknown
         elixir: torch.Tensor,                           # (B,) long
         rtg: torch.Tensor,                              # (B,) float
         prev_a_card: torch.Tensor,                      # (B,) long  (0 = no-op)
@@ -185,12 +186,14 @@ class FrameTokenizer(nn.Module):
         patch_type = torch.full(patch_tok.shape[:2], TOK_PATCH, dtype=torch.long, device=device)
 
         # 2) Object tokens — combine class/bbox/conf/side/track
+        # Tracker ids grow without bound over a game; wrap them into [1, max_track_ids] (0 = untracked).
+        track = torch.where(det_track > 0, (det_track - 1) % self.max_track_ids + 1, torch.zeros_like(det_track))
         obj_tok = (
             self.cls_emb(det_cls + 1)                                      # +1 because 0 is padding
             + self.bbox_emb(det_bbox)
             + self.conf_proj(det_conf.unsqueeze(-1))
             + self.side_emb(det_side.clamp(0, 2))
-            + self.track_emb(det_track.clamp_max(self.track_emb.num_embeddings - 1))
+            + self.track_emb(track)
         )
         # Zero out padded slots so they contribute nothing even if the mask leaks
         obj_tok = obj_tok * det_mask.unsqueeze(-1).to(obj_tok.dtype)
@@ -198,7 +201,7 @@ class FrameTokenizer(nn.Module):
 
         # 3) Card tokens
         slot_idx = torch.arange(self.n_hand, device=device)
-        card_tok = self.card_emb(cards.clamp_min(0)) + self.card_slot_emb(slot_idx)[None]   # (B, n_hand, D)
+        card_tok = self.card_emb(cards.clamp_min(-1) + 1) + self.card_slot_emb(slot_idx)[None]   # (B, n_hand, D)
         card_mask = (cards >= 0)
         card_type = torch.full(card_tok.shape[:2], TOK_CARD, dtype=torch.long, device=device)
 
@@ -232,12 +235,3 @@ class FrameTokenizer(nn.Module):
 
         toks = toks + self.type_emb(types)
         return FrameTokens(tokens=toks, type_ids=types, mask=masks)
-
-
-def flatten_time_batch(images: torch.Tensor, *others: torch.Tensor) -> Tuple[torch.Tensor, ...]:
-    """Helper: collapse (B, T, ...) into (B*T, ...)."""
-    B, T = images.shape[:2]
-    out = [images.reshape(B * T, *images.shape[2:])]
-    for x in others:
-        out.append(x.reshape(B * T, *x.shape[2:]))
-    return tuple(out)

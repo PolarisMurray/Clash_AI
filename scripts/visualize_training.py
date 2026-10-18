@@ -5,7 +5,6 @@ Usage: python -m scripts.visualize_training --logs outputs/policy_runs/demo/tb -
 from __future__ import annotations
 
 import argparse
-from collections import defaultdict
 from pathlib import Path
 
 import matplotlib
@@ -83,10 +82,9 @@ def main():
     ax.set_title("Component losses (smoothed)")
     ax.set_xlabel("step", fontsize=9); ax.grid(alpha=0.3); ax.legend(fontsize=8)
 
-    fig.suptitle("Perceiver-DT training curves — synthetic 5-epoch demo run",
-                 fontsize=14, fontweight="bold", y=0.995)
-    fig.text(0.5, 0.005,
-             "Synthetic random trajectories · model scaled down to ~5.4M params · 640 steps · seq_len=4 · batch=4 · device=MPS",
+    n_steps = max(int(x.max()) for x, _ in scalars.values())
+    fig.suptitle("Perceiver-DT training curves", fontsize=14, fontweight="bold", y=0.995)
+    fig.text(0.5, 0.005, f"{args.logs}  ·  {n_steps} optimizer steps",
              ha="center", fontsize=10, color="#475569", style="italic")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)

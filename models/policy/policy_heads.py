@@ -77,6 +77,7 @@ def policy_loss(
       - 'pos_xy'  (B, T, 2) float                       (used in xy mode)
       - 'delay'   (B, T) long   value in [0, max_delay]
     action_mask (B, T) bool — True = timestep contributes to loss.
+    The position loss additionally skips no-op targets: they have no deployment position.
     loss_w: {'select': float, 'pos': float, 'delay': float}
     Returns dict with 'loss', 'loss_select', 'loss_pos', 'loss_delay', plus accuracies.
     """
@@ -95,19 +96,22 @@ def policy_loss(
     metrics["loss_select"] = loss_select
     metrics["acc_select"] = acc_select
 
-    # ---- position ----
+    # ---- position (only where a card is actually played) ----
+    no_op_idx = out.select_logits.shape[-1] - 1
+    pos_mask = flat_mask & (sel_target != no_op_idx)
+    n_pos = pos_mask.sum().clamp_min(1).float()
     if out.pos_logits is not None:
         pos_logits = out.pos_logits.reshape(-1, out.pos_logits.shape[-1])
         pos_target = targets["pos_idx"].reshape(-1)
         loss_pos_per = F.cross_entropy(pos_logits, pos_target, reduction="none")
-        loss_pos = (loss_pos_per * flat_mask).sum() / n
+        loss_pos = (loss_pos_per * pos_mask).sum() / n_pos
         pos_pred = pos_logits.argmax(-1)
-        acc_pos = ((pos_pred == pos_target).float() * flat_mask).sum() / n
+        acc_pos = ((pos_pred == pos_target).float() * pos_mask).sum() / n_pos
     else:
         pos_pred_xy = out.pos_xy.reshape(-1, 2)
         pos_target_xy = targets["pos_xy"].reshape(-1, 2)
         loss_pos_per = F.mse_loss(pos_pred_xy, pos_target_xy, reduction="none").mean(-1)
-        loss_pos = (loss_pos_per * flat_mask).sum() / n
+        loss_pos = (loss_pos_per * pos_mask).sum() / n_pos
         acc_pos = torch.tensor(0.0, device=loss_pos.device)
     metrics["loss_pos"] = loss_pos
     metrics["acc_pos"] = acc_pos

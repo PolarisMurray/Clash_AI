@@ -3,8 +3,8 @@ torch>=2.2
 torchvision>=0.17
 einops>=0.8
 
-# Detection
-ultralytics>=8.1
+# Detection (YOLO26 checkpoints need a recent Ultralytics)
+ultralytics>=8.3.222
 
 # Image / IO
 opencv-python>=4.9
@@ -18,6 +18,9 @@ tensorboard>=2.16
 
 # Visualization scripts
 matplotlib>=3.8
+
+# Tests
+pytest>=8
 
 # Optional — uncomment if you use these
 # wandb>=0.16             # for cloud experiment tracking

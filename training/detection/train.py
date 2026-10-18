@@ -8,7 +8,8 @@ from pathlib import Path
 import yaml
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parent                      # training/detection/
+REPO_ROOT = ROOT.parents[1]
 SOURCE_PART2 = ROOT / "source_dataset/images/part2"
 YOLO_DATASET = ROOT / "prepared_dataset/yolo_detection"
 RUNS_DIR = ROOT / "runs"
@@ -16,10 +17,15 @@ RUNS_DIR = ROOT / "runs"
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Prepare the Clash Royale part2 dataset and train a standard YOLOv8 model."
+        description="Prepare the Clash Royale part2 dataset and fine-tune a YOLO detector on it."
     )
-    parser.add_argument("--model", default="yolo26s.pt", help="YOLO model checkpoint or yaml.")
+    parser.add_argument(
+        "--model",
+        default=str(REPO_ROOT / "models/detection/yolo26s.pt"),
+        help="Base checkpoint to fine-tune (default: the bundled COCO-pretrained YOLO26s).",
+    )
     parser.add_argument("--epochs", type=int, default=80)
+    parser.add_argument("--time", type=float, default=None, help="Training budget in hours (overrides --epochs).")
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--batch", type=int, default=4)
     parser.add_argument("--device", default="mps", help='Use "mps" on Apple Silicon, "cpu", or a CUDA id.')
@@ -119,8 +125,9 @@ def prepare_split(split: str, image_mode: str) -> tuple[int, int]:
 def write_data_yaml(names: list[str]) -> Path:
     data_yaml = YOLO_DATASET / "data.yaml"
     data_yaml.parent.mkdir(parents=True, exist_ok=True)
+    # No "path" key: Ultralytics then resolves train/val relative to this yaml,
+    # so the prepared dataset keeps working after the repo is moved or cloned.
     data = {
-        "path": str(YOLO_DATASET),
         "train": "images/train",
         "val": "images/val",
         "nc": len(names),
@@ -154,6 +161,7 @@ def train(args: argparse.Namespace, data_yaml: Path) -> None:
     model.train(
         data=str(data_yaml),
         epochs=args.epochs,
+        time=args.time,
         imgsz=args.imgsz,
         batch=args.batch,
         device=args.device,
@@ -184,7 +192,12 @@ def main() -> None:
         return
 
     if not args.skip_prepare:
-        data_yaml = prepare_dataset(args.image_mode)
+        if SOURCE_PART2.exists():
+            data_yaml = prepare_dataset(args.image_mode)
+        elif data_yaml.exists():
+            print(f"Source dataset not found at {SOURCE_PART2}; using the prepared dataset at {YOLO_DATASET}")
+        else:
+            raise FileNotFoundError(f"Missing source dataset: {SOURCE_PART2}")
 
     if args.prepare_only:
         return

@@ -1,4 +1,4 @@
-"""Thin YOLOv8 wrapper used by the new policy pipeline.
+"""Thin Ultralytics YOLO wrapper used by the new policy pipeline.
 
 Replaces the old multi-detector / OCR-coupled perception code.
 Only responsibility: take a BGR frame → return a structured Detection list.
@@ -7,9 +7,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
+
+# Fine-tuned on the 155 Clash Royale classes (training/detection/train.py).
+# models/detection/yolo26s.pt is only the COCO-pretrained base and cannot detect game units.
+DEFAULT_WEIGHTS = Path(__file__).resolve().parents[1] / "models/detection/clash_royale_yolo26s.pt"
 
 
 @dataclass
@@ -23,17 +27,6 @@ class Detection:
     bbox_norm: np.ndarray            # shape (4,), float, normalized cx, cy, w, h in [0, 1]
     side: int = 0                    # 0=unknown, 1=ally (lower half), 2=enemy (upper half)
     track_id: int = 0                # 0 = unassigned
-
-    def as_dict(self) -> Dict[str, Any]:
-        return {
-            "cls_id": int(self.cls_id),
-            "cls_name": str(self.cls_name),
-            "conf": float(self.conf),
-            "bbox_xyxy": self.bbox_xyxy.tolist(),
-            "bbox_norm": self.bbox_norm.tolist(),
-            "side": int(self.side),
-            "track_id": int(self.track_id),
-        }
 
 
 @dataclass
@@ -69,7 +62,7 @@ class FrameDetections:
 
 
 class YOLODetector:
-    """Loads YOLOv8 once, runs predict, returns FrameDetections.
+    """Loads a YOLO checkpoint once, runs predict, returns FrameDetections.
 
     No OCR. No episode cutting. No card classifier.
     Tracking is optional and uses ultralytics' built-in tracker if requested.
@@ -96,14 +89,22 @@ class YOLODetector:
         self.tracker = tracker
         self.side_split_y = side_split_y
 
+        raw = getattr(self._model, "names", {}) or {}
+        if isinstance(raw, dict):
+            model_names = {int(k): str(v) for k, v in raw.items()}
+        else:
+            model_names = {i: str(v) for i, v in enumerate(raw)}
         if class_names is not None:
+            # Renaming classes is only valid for the label set the weights were trained on;
+            # e.g. COCO weights + Clash Royale names would silently mislabel every box.
+            if len(class_names) != len(model_names):
+                raise ValueError(
+                    f"{weights} predicts {len(model_names)} classes but {len(class_names)} class names were "
+                    "given. These weights were not trained on this label set."
+                )
             self.class_names = {i: str(n) for i, n in enumerate(class_names)}
         else:
-            raw = getattr(self._model, "names", {}) or {}
-            if isinstance(raw, dict):
-                self.class_names = {int(k): str(v) for k, v in raw.items()}
-            else:
-                self.class_names = {i: str(v) for i, v in enumerate(raw)}
+            self.class_names = model_names
 
     def _label(self, cid: int) -> str:
         return self.class_names.get(int(cid), str(int(cid)))
@@ -133,9 +134,6 @@ class YOLODetector:
                 verbose=False,
             )[0]
         return self._parse(result, h, w)
-
-    def predict_batch(self, frames_bgr: Iterable[np.ndarray]) -> List[FrameDetections]:
-        return [self.predict(f) for f in frames_bgr]
 
     def _parse(self, result: Any, h: int, w: int) -> FrameDetections:
         boxes = getattr(result, "boxes", None)
@@ -172,29 +170,18 @@ class YOLODetector:
         return FrameDetections(detections=out, width=w, height=h)
 
 
-def load_class_names(data_yaml: Path) -> List[str]:
-    """Read names: from a data.yaml file."""
-    import yaml
-    data = yaml.safe_load(Path(data_yaml).read_text()) or {}
-    names = data.get("names", [])
-    if isinstance(names, dict):
-        return [str(names[k]) for k in sorted(names)]
-    return [str(x) for x in names]
-
-
 if __name__ == "__main__":
     import argparse
     import cv2
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--weights", default="models/detection/yolo26s.pt")
-    parser.add_argument("--data-yaml", default="models/detection/data.yaml")
+    parser.add_argument("--weights", default=str(DEFAULT_WEIGHTS))
     parser.add_argument("--image", required=True)
-    parser.add_argument("--device", default="mps")
+    parser.add_argument("--conf", type=float, default=0.25)
+    parser.add_argument("--device", default=None, help='e.g. "mps", "cpu", "0"; default lets Ultralytics choose')
     args = parser.parse_args()
 
-    names = load_class_names(Path(args.data_yaml))
-    det = YOLODetector(Path(args.weights), device=args.device, class_names=names)
+    det = YOLODetector(Path(args.weights), conf=args.conf, device=args.device)
     frame = cv2.imread(args.image)
     fd = det.predict(frame)
     print(f"{len(fd.detections)} detections on a {fd.width}x{fd.height} frame")

@@ -10,9 +10,7 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import time
-from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
@@ -47,7 +45,7 @@ def select_device(pref: str) -> torch.device:
 
 def cosine_lr_with_warmup(step: int, warmup_steps: int, total_steps: int, min_ratio: float = 0.1) -> float:
     if step < warmup_steps:
-        return step / max(1, warmup_steps)
+        return (step + 1) / max(1, warmup_steps)              # step 0 must not run with lr = 0
     progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
     progress = min(1.0, progress)
     return min_ratio + (1.0 - min_ratio) * 0.5 * (1.0 + math.cos(math.pi * progress))
@@ -197,6 +195,11 @@ def main():
     args = parser.parse_args()
 
     overrides = {}
+    if args.smoke:
+        # Smoke defaults first, so explicit CLI flags below still take effect.
+        overrides.update(dict(
+            batch_size=2, epochs=1, seq_len=4, num_workers=0, log_interval=1,
+        ))
     if args.epochs is not None: overrides["epochs"] = args.epochs
     if args.batch_size is not None: overrides["batch_size"] = args.batch_size
     if args.seq_len is not None:
@@ -204,10 +207,6 @@ def main():
     if args.lr is not None: overrides["lr"] = args.lr
     if args.device is not None: overrides["device"] = args.device
     if args.num_workers is not None: overrides["num_workers"] = args.num_workers
-    if args.smoke:
-        overrides.update(dict(
-            batch_size=2, epochs=1, seq_len=4, num_workers=0, log_interval=1,
-        ))
 
     cfg = default_config(**overrides)
 
@@ -246,9 +245,13 @@ def main():
         betas=cfg.train.betas,
     )
     total_steps = max(1, cfg.train.epochs * (len(train_loader) // max(1, cfg.train.grad_accum)))
+    # Cap warmup at 10% of the run; otherwise short runs never leave warmup and never decay.
+    warmup_steps = min(cfg.train.warmup_steps, max(1, total_steps // 10))
+    if warmup_steps < cfg.train.warmup_steps:
+        print(f"[optim] warmup capped {cfg.train.warmup_steps} -> {warmup_steps} steps (total {total_steps})")
     scheduler = LambdaLR(
         optimizer,
-        lr_lambda=lambda s: cosine_lr_with_warmup(s, cfg.train.warmup_steps, total_steps),
+        lr_lambda=lambda s: cosine_lr_with_warmup(s, warmup_steps, total_steps),
     )
 
     logger = Logger(cfg, run_dir)

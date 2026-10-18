@@ -3,6 +3,7 @@ from data.replay_dataset import (
     Trajectory,
     build_dataloader,
     build_random_trajectory,
+    trajectory_from_frames,
 )
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "Trajectory",
     "build_dataloader",
     "build_random_trajectory",
+    "trajectory_from_frames",
 ]

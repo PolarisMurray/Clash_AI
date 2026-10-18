@@ -1,12 +1,12 @@
 """Generate a set of YOLO-detection visualizations using the NEW perception wrapper.
 
 Outputs (under --out):
-    yolo_overlay_<frame>.png   one annotated screenshot per chosen frame
-    yolo_grid.png              4-panel grid of those screenshots
-    yolo_stats.png             class distribution + confidence histogram + boxes/frame
+    yolo_overlays/yolo_overlay_<frame>.png   one annotated screenshot per chosen frame
+    02_yolo_grid.png           grid of those screenshots
+    03_yolo_stats.png          class distribution + confidence histogram + boxes/frame
     yolo_summary.json          per-frame detection counts + top classes
 
-Run: python -m scripts.visualize_yolo --frames 8 --device mps
+Run: python -m scripts.visualize_yolo --frames 12
 """
 from __future__ import annotations
 
@@ -28,7 +28,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from perception.yolo_detector import YOLODetector, load_class_names
+from perception.yolo_detector import DEFAULT_WEIGHTS, YOLODetector
+
+DEFAULT_FRAMES = ROOT / "training/detection/prepared_dataset/yolo_detection/images/val/OYASSU_20230212_episodes/4"
 
 
 # ---------------- color palette per class id (stable seed) ---------------- #
@@ -71,16 +73,16 @@ def draw_overlay(frame_bgr: np.ndarray, fd, colors) -> np.ndarray:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--weights", type=Path, default=ROOT / "models/detection/yolo26s.pt")
-    ap.add_argument("--data-yaml", type=Path, default=ROOT / "models/detection/data.yaml")
-    ap.add_argument("--screenshots", type=Path, default=ROOT / "tests/sample_screenshots/1")
+    ap.add_argument("--weights", type=Path, default=DEFAULT_WEIGHTS)
+    ap.add_argument("--screenshots", type=Path, default=DEFAULT_FRAMES)
     ap.add_argument("--out", type=Path, default=ROOT / "outputs/visualizations")
-    ap.add_argument("--frames", type=int, default=8, help="how many frames to sample evenly")
-    ap.add_argument("--device", default="mps")
+    ap.add_argument("--frames", type=int, default=12, help="how many frames to sample evenly")
+    ap.add_argument("--device", default=None)
     ap.add_argument("--conf", type=float, default=0.25)
     args = ap.parse_args()
 
-    args.out.mkdir(parents=True, exist_ok=True)
+    overlay_dir = args.out / "yolo_overlays"
+    overlay_dir.mkdir(parents=True, exist_ok=True)
     files = sorted(args.screenshots.glob("*.jpg"))
     if not files:
         raise SystemExit(f"no .jpg under {args.screenshots}")
@@ -88,9 +90,8 @@ def main():
     chosen = [files[i] for i in idxs]
     print(f"[yolo] using {len(chosen)}/{len(files)} frames from {args.screenshots}")
 
-    names = load_class_names(args.data_yaml)
-    det = YOLODetector(args.weights, conf=args.conf, device=args.device, class_names=names)
-    colors = class_colors(len(names))
+    det = YOLODetector(args.weights, conf=args.conf, device=args.device)
+    colors = class_colors(len(det.class_names))
 
     overlays = []
     summary = []
@@ -102,7 +103,7 @@ def main():
         frame = cv2.imread(str(f))
         fd = det.predict(frame)
         ov = draw_overlay(frame, fd, colors)
-        out_path = args.out / f"yolo_overlay_{f.stem}.png"
+        out_path = overlay_dir / f"yolo_overlay_{f.stem}.png"
         Image.fromarray(ov).save(out_path)
         overlays.append((f.stem, ov, fd))
         summary.append({
@@ -126,7 +127,7 @@ def main():
         ax.axis("off")
     for ax in axes[len(overlays):]:
         ax.axis("off")
-    fig.suptitle("New YOLO wrapper — sample-screenshot detections", fontsize=14, y=0.995)
+    fig.suptitle("Fine-tuned YOLO — held-out validation frames", fontsize=14, y=0.995)
     fig.tight_layout()
     grid_path = args.out / "02_yolo_grid.png"
     fig.savefig(grid_path, dpi=130, bbox_inches="tight", facecolor="white")
@@ -156,7 +157,7 @@ def main():
     ax3.set_xticks(range(len(n_per_frame)))
     ax3.set_xticklabels([s for s, _, _ in overlays], rotation=45, ha="right", fontsize=9)
     ax3.grid(alpha=0.3)
-    fig.suptitle("YOLO detection statistics — sample screenshots", fontsize=14)
+    fig.suptitle("YOLO detection statistics — held-out validation frames", fontsize=14)
     fig.tight_layout()
     stats_path = args.out / "03_yolo_stats.png"
     fig.savefig(stats_path, dpi=130, bbox_inches="tight", facecolor="white")
@@ -165,7 +166,7 @@ def main():
 
     json_path = args.out / "yolo_summary.json"
     json_path.write_text(json.dumps({
-        "screenshots_dir": str(args.screenshots),
+        "screenshots_dir": str(args.screenshots.relative_to(ROOT) if args.screenshots.is_relative_to(ROOT) else args.screenshots),
         "n_frames_used": len(chosen),
         "n_classes_seen": len(cls_counter),
         "n_detections_total": int(sum(n_per_frame)),

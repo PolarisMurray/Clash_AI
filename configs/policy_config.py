@@ -10,9 +10,9 @@ Plain dataclasses — no JAX / Flax dependency.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, fields, asdict
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Tuple
 
 
 @dataclass
@@ -24,13 +24,12 @@ class TokenizerConfig:
     n_classes: int = 160                              # YOLO class vocab (155 + small headroom)
     max_objects: int = 32                             # cap detections per frame
     n_cards: int = 128                                # card name vocabulary
-    n_hand: int = 5                                   # 4 cards + 1 next-card
+    n_hand: int = 5                                   # 4 playable cards + 1 next-card (last slot)
     n_elixir: int = 11                                # 0..10 (-1 → unknown bucketed to 0)
     max_delay: int = 20                               # delay head bin count - 1
     grid_rows: int = 36                               # deployment grid rows  (user spec)
     grid_cols: int = 64                               # deployment grid cols  (user spec)
-    use_track_id: bool = True
-    max_track_ids: int = 64                           # 0 reserved for "no track"
+    max_track_ids: int = 64                           # 0 reserved for "no track"; larger ids wrap around
 
     @property
     def grid_size(self) -> int:
@@ -82,15 +81,12 @@ class ModelConfig:
 class DataConfig:
     """Offline replay dataset & sampling."""
 
-    root: Path = Path("outputs/replay_dataset")
-    fps: int = 10
     seq_len: int = 30                                 # match ModelConfig.seq_len
     rtg_scale: float = 1.0                            # divide RTG before feeding model
     weighted_sampling: bool = True                    # upweight action frames
     action_focus_window: int = 10                     # spread action weight to nearby frames
-    min_action_frac: float = 0.3                      # fraction of batches forced to be action-anchored
     lr_flip: bool = True                              # left/right augmentation
-    card_shuffle: bool = True                         # permute hand-card slots
+    card_shuffle: bool = True                         # permute the playable hand-card slots
     num_workers: int = 4
 
 
@@ -135,6 +131,31 @@ class FullConfig:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "FullConfig":
+        """Inverse of ``to_dict`` (e.g. the ``config`` stored in a checkpoint).
+
+        Keys that no longer exist on the dataclasses are ignored, so older
+        checkpoints still load.
+        """
+        def build(dc, values: dict, **nested):
+            known = {f.name for f in fields(dc)}
+            kwargs = {k: v for k, v in values.items() if k in known and k not in nested}
+            return dc(**kwargs, **nested)
+
+        tok = build(TokenizerConfig, d.get("tokenizer", {}))
+        tok.image_size = tuple(tok.image_size)
+        m = d.get("model", {})
+        model = build(
+            ModelConfig, m,
+            perceiver=build(PerceiverConfig, m.get("perceiver", {})),
+            heads=build(PolicyHeadsConfig, m.get("heads", {})),
+        )
+        train = build(TrainConfig, d.get("train", {}))
+        train.betas = tuple(train.betas)
+        train.out_dir = Path(train.out_dir)
+        return cls(tokenizer=tok, model=model, data=build(DataConfig, d.get("data", {})), train=train)
 
 
 def default_config(**overrides) -> FullConfig:

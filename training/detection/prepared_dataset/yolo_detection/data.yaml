@@ -1,4 +1,3 @@
-path: /Users/chenzishu/Downloads/Old-Clash/katacr/yolo/prepared_dataset/yolo_detection
 train: images/train
 val: images/val
 nc: 155

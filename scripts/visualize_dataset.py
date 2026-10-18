@@ -24,11 +24,10 @@ from data.replay_dataset import ReplayDataset, build_random_trajectory
 def main():
     out = ROOT / "outputs/visualizations/06_replay_dataset.png"
     cfg = default_config(seq_len=30, batch_size=4, num_workers=0)
-    cfg.__post_init__()
 
     n_frames = 240
     trajs = [build_random_trajectory(cfg, n_frames, seed=k) for k in range(3)]
-    ds = ReplayDataset(trajs, cfg, split="train")
+    ds = ReplayDataset(trajs, cfg)
 
     is_action = np.asarray(ds._is_action, dtype=np.int32)
     weights = ds._sample_weights
